@@ -1,0 +1,116 @@
+---
+import { app } from "../firebase/server";
+import { getAuth } from "firebase-admin/auth";
+import Layout from "../layouts/Layout.astro";
+
+/* Verificar si el usuario está autenticado */
+const auth = getAuth(app);
+
+async function checkSessionAndRedirect() {
+  const sessionCookie = Astro.cookies.get("__session");
+  if (sessionCookie) {
+    const decodedCookie = await auth.verifySessionCookie(sessionCookie.value);
+    if (decodedCookie) {
+      return Astro.redirect("/dashboard");
+    }
+  }
+}
+
+
+---
+
+<Layout title="Iniciar sesión">
+  <h1>Iniciar sesión</h1>
+  <p>¿Eres nuevo aquí? <a href="/register">Crear una cuenta</a></p>
+  <form action="/api/auth/signin" method="post">
+    <label for="email" for="email">Correo electrónico</label>
+    <input type="email" name="email" id="email" />
+    <label for="password">Contraseña</label>
+    <input type="password" name="password" id="password" />
+    <button type="submit">Iniciar sesión</button>
+  </form>
+  <button id="google">Iniciar sesión con Google</button>
+  <button id="apple">Iniciar sesión con Apple</button>
+</Layout>
+<script>
+  import {
+    getAuth,
+    inMemoryPersistence,
+    signInWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithPopup,
+    OAuthProvider,
+  } from "firebase/auth";
+  import { app } from "../firebase/client";
+
+  const auth = getAuth(app);
+  // Esto evitará que el navegador almacene los datos de sesión
+  auth.setPersistence(inMemoryPersistence);
+
+  const form = document.querySelector("form") as HTMLFormElement;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const formData = new FormData(form);
+    const email = formData.get("email")?.toString();
+    const password = formData.get("password")?.toString();
+
+    if (!email || !password) {
+      return;
+    }
+    const userCredential = await signInWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
+    const idToken = await userCredential.user.getIdToken();
+    const response = await fetch("/api/auth/signin", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    if (response.redirected) {
+      window.location.assign(response.url);
+    }
+  });
+
+  const googleSignin = document.querySelector("#google") as HTMLButtonElement;
+  googleSignin.addEventListener("click", async () => {
+    const provider = new GoogleAuthProvider();
+    const userCredential = await signInWithPopup(auth, provider);
+    const idToken = await userCredential.user.getIdToken();
+    const res = await fetch("/api/auth/signin", {
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    });
+
+    if (res.redirected) {
+      window.location.assign(res.url);
+    }
+  });
+
+  const appleSignin = document.querySelector("#apple") as HTMLButtonElement;
+  appleSignin.addEventListener("click", async () => {
+    const provider = new OAuthProvider('apple.com');
+    try {
+      const userCredential = await signInWithPopup(auth, provider);
+      const idToken = await userCredential.user.getIdToken();
+      const res = await fetch("/api/auth/signin", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (res.redirected) {
+        window.location.assign(res.url);
+      }
+    } catch (error) {
+      console.error("Error al iniciar sesión con Apple:", error);
+      // Manejar errores de inicio de sesión con Apple aquí
+    }
+  });
+
+</script>
